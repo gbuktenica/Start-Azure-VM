@@ -1,0 +1,81 @@
+# Test Pipeline
+
+trigger: none
+
+pool:
+  vmImage: 'windows-latest'
+
+stages:
+  - stage: Dev_Package
+    jobs:
+      - job: Dev_Package
+        steps:
+        - task: PowerShell@2
+          displayName: "Dev"
+          inputs:
+            targetType: 'inline'
+            script: Write-Output "Running Dev"
+
+  - stage: Test_Package
+    condition: and(succeeded(), in(variables['Build.Reason'], 'manual'))
+    jobs:
+      - job: Test_Package
+        steps:
+        - task: PowerShell@2
+          displayName: "Test"
+          inputs:
+            targetType: 'inline'
+            script: Write-Output "Running Test"
+
+  - stage: Production_Package
+    condition: and(succeeded(), in(variables['Build.Reason'], 'manual'))
+    jobs:
+      - job: Production_Package
+        steps:
+        - task: AzurePowerShell@5
+          displayName: Power_On_Pipeline
+          inputs:
+            azureSubscription: 'SERVICE_PRINCIPAL'
+            ScriptType: 'FilePath'
+            ScriptPath:  '$(System.DefaultWorkingDirectory)/Connect-Azure.ps1'
+            ScriptArguments: '-Pipeline -InvokeCommands "$(System.DefaultWorkingDirectory)/Start-PipelineRunner.ps1" -InvokeArguments "PIPELINE_RUNNER"'
+            FailOnStandardError: true
+            azurePowerShellVersion: 'LatestVersion'
+            pwsh: true
+        - task: CopyFiles@2
+          displayName: "Copy Release Utilities"
+          inputs:
+            SourceFolder: '$(System.DefaultWorkingDirectory)'
+            Contents: '*.ps1'
+            TargetFolder: '$(build.artifactstagingdirectory)\Utilities\'
+
+        - task: PublishBuildArtifacts@1
+          displayName: "Publish Release Utilities"
+          inputs:
+            PathtoPublish: '$(build.artifactstagingdirectory)\Utilities\'
+            ArtifactName: 'Utilities'
+            publishLocation: 'Container'
+
+  - stage: Production_Release
+    dependsOn: Production_Package
+    jobs:
+      - deployment: Production_Release
+        environment: 'Production'
+        pool: 'Serenity'
+        variables:
+        - group: Prod
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+              - task: PowerShell@2
+                displayName: "Production_Release"
+                inputs:
+                  targetType: 'inline'
+                  script: Write-Output "Running Production_Release"
+              - task: PowerShell@2
+                displayName: "Email admin"
+                inputs:
+                  filePath: '$(Pipeline.Workspace)\Utilities\Send-Notification.ps1'
+                  arguments: '-mailSubject "successfully deployed to production" -client_secret $(client_secret)'
+                  pwsh: true
