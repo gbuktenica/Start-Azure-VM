@@ -73,6 +73,14 @@ stages:
                 inputs:
                   targetType: 'inline'
                   script: Write-Output "Running Production_Release"
+
+              - task: PowerShell@2
+                displayName: "Post Deployment Tests"
+                inputs:
+                  filePath: '$(Pipeline.Workspace)\Utilities\Invoke-PesterTests.ps1'
+                  arguments: '-WebsiteUrl $(WebsiteUrl) -TestPath $(Pipeline.Workspace)\Utilities\ -Username $(RemoteUsername)-Secret $(SvcPwd)'
+                  pwsh: true
+
               - task: PowerShell@2
                 displayName: "Email admin"
                 inputs:
